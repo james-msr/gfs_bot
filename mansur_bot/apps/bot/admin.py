@@ -1,6 +1,5 @@
 from django.contrib import admin
-from .models import Client, Route, Truck
+from .models import User, Order
 
-admin.site.register(Client)
-admin.site.register(Route)
-admin.site.register(Truck)
+admin.site.register(User)
+admin.site.register(Order)

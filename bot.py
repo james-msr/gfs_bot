@@ -16,10 +16,10 @@ import django
 os.environ.setdefault("DJANGO_SETTINGS_MODULE", "mansur_bot.settings")
 django.setup()
 
-from bot.models import Client, Route, Truck
+from bot.models import User, Order
 
 from asgiref.sync import sync_to_async
-
+print(User.objects.filter(user_type='driver'))
 
 logging.basicConfig(level=logging.INFO)
 BOT_TOKEN = '2035003130:AAHXsox9UbKrC6c8xT8B8V72G7nYayWoj7o'
@@ -46,41 +46,51 @@ async def contact(message: Message):
         global phonenumber
         phonenumber= str(message.contact.phone_number)
         print(phonenumber)
-        keyboard = types.ReplyKeyboardMarkup(row_width=1, resize_keyboard=True)
-        button_routes = types.KeyboardButton(text="Маршруты")
-        keyboard.add(button_routes)
-        try:
-            global client
-            client = await sync_to_async(Client.objects.get)(phone_num=phonenumber)
-            await bot.send_message(message.chat.id, 'Выберите опцию', reply_markup=keyboard)
-        except:
-            await bot.send_message(message.chat.id, 'Отправьте свой номер')
+        # try:
+        global user
+        user = await sync_to_async(User.objects.get)(phone_num=phonenumber)
+        if user.user_type == 'client':
+            keyboard = types.ReplyKeyboardMarkup(row_width=1, resize_keyboard=True)
+            button_routes = types.KeyboardButton(text="Маршруты")
+            keyboard.add(button_routes)
+        else:
+            keyboard = types.ReplyKeyboardMarkup(row_width=1, resize_keyboard=True)
+            button_location = types.KeyboardButton(text="Отправить локацию", request_location=True)
+            keyboard.add(button_location)
+        await bot.send_message(message.chat.id, 'Выберите опцию', reply_markup=keyboard)
+        # except:
+        #     await bot.send_message(message.chat.id, 'Отправьте свой номер')
             
     
-
-
 @dp.message_handler(content_types=['text'])
 async def send_routes(message: Message):
     if message.text == 'Маршруты':
-        routes = await sync_to_async(list)(client.route.all())
+        orders = await sync_to_async(list)(user.get_orders())
         keyboard = types.InlineKeyboardMarkup(row_width=3)
-        for route in routes:
-            button = types.InlineKeyboardButton(route.__str__(), callback_data=route_cb.new(action='route_btn', id=route.id))
+        for order in orders:
+            button = types.InlineKeyboardButton(sync_to_async(str)(order.get_route()), callback_data=route_cb.new(action='order_btn', id=order.id))
             keyboard.add(button)
         await bot.send_message(message.chat.id, "Маршруты", reply_markup=keyboard)
 
 
-@dp.callback_query_handler(route_cb.filter(action='route_btn'))
-async def vote_up_cb_handler(query: CallbackQuery, callback_data: dict):
+@dp.message_handler(content_types=['location'])
+async def handle_location(message: types.Message):
+    lat = message.location.latitude
+    lon = message.location.longitude
+    order = Order.objects.get(driver=user)
+    order.latitude = lat
+    order.longitude = lon
+    save = sync_to_async(order.save)
+    await save()
+    await message.answer('Местополежение отправлено', reply_markup=types.ReplyKeyboardRemove())
+
+
+@dp.callback_query_handler(route_cb.filter(action='order_btn'))
+async def order_handler(query: CallbackQuery, callback_data: dict):
     logging.info(callback_data)
     id = callback_data['id']
-    route = await sync_to_async(Route.objects.get)(pk=id)
-    truck = await sync_to_async(Truck.objects.get)(route=route, client=client)
-    photo = truck.location_photo.url
-    print(photo)
-    location = photo[1:]
-    with open(location, 'rb') as p:
-        await bot.send_photo(query.from_user.id, p, truck.num)
+    order = await sync_to_async(Order.objects.get)(pk=id)
+    await bot.send_location(query.from_user.id, order.latitude, order.longitude)
 
 
 
