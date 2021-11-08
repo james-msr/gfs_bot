@@ -1,15 +1,12 @@
 import asyncio
-from aiogram.types.callback_query import CallbackQuery
-from aiogram.types.message import Message
 import aioschedule
 import logging
-import json
-
 
 
 from aiogram import Dispatcher, Bot, executor, types
-from aiogram.utils.markdown import link
 from aiogram.utils.callback_data import CallbackData
+from aiogram.types.callback_query import CallbackQuery
+from aiogram.types.message import Message
 
 import os
 import django
@@ -43,12 +40,12 @@ async def contact(message: Message):
     if message.contact is not None:
         keyboard2 = types.ReplyKeyboardRemove()
         await bot.send_message(message.chat.id, 'Вы успешно отправили свой номер', reply_markup=keyboard2)
-        global phonenumber
         phonenumber= str(message.contact.phone_number)
         print(phonenumber)
         # try:
-        global user
         user = await sync_to_async(User.objects.get)(phone_num=phonenumber)
+        user.chat_id = message.chat.id
+        await sync_to_async(user.save)()
         if user.user_type == 'client':
             keyboard = types.ReplyKeyboardMarkup(row_width=1, resize_keyboard=True)
             button_routes = types.KeyboardButton(text="Маршруты")
@@ -65,23 +62,25 @@ async def contact(message: Message):
 @dp.message_handler(content_types=['text'])
 async def send_routes(message: Message):
     if message.text == 'Маршруты':
-        orders = await sync_to_async(list)(user.get_orders())
+        user = await sync_to_async(User.objects.get)(chat_id=message.chat.id)
+        orders = await sync_to_async(list)(Order.objects.filter(client=user))
         keyboard = types.InlineKeyboardMarkup(row_width=3)
         for order in orders:
-            button = types.InlineKeyboardButton(sync_to_async(str)(order.get_route()), callback_data=route_cb.new(action='order_btn', id=order.id))
+            order_name = await sync_to_async(order.get_route)()
+            button = types.InlineKeyboardButton(order_name, callback_data=route_cb.new(action='order_btn', id=order.id))
             keyboard.add(button)
         await bot.send_message(message.chat.id, "Маршруты", reply_markup=keyboard)
 
 
 @dp.message_handler(content_types=['location'])
 async def handle_location(message: types.Message):
+    user = await sync_to_async(User.objects.get)(chat_id=message.chat.id)
     lat = message.location.latitude
     lon = message.location.longitude
-    order = Order.objects.get(driver=user)
+    order = await sync_to_async(Order.objects.get)(driver=user)
     order.latitude = lat
     order.longitude = lon
-    save = sync_to_async(order.save)
-    await save()
+    await sync_to_async(order.save)()
     await message.answer('Местополежение отправлено', reply_markup=types.ReplyKeyboardRemove())
 
 
