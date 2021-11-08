@@ -1,6 +1,5 @@
-from typing import ClassVar
 from django.db import models
-
+from datetime import datetime
 
 
 
@@ -29,9 +28,14 @@ class Order(models.Model):
     _to = models.CharField('Куда', max_length=100)
     latitude = models.FloatField('Долгота', max_length=100, null=True, blank=True)
     longitude = models.FloatField('Широта', max_length=100, null=True, blank=True)
+    last_update = models.DateTimeField('Последнее обновление', null=True, blank=True)
 
     def get_route(self):
         return self._from + ' - ' + self._to
+
+    def update_time(self):
+        self.last_update = datetime.now()
+        return self.last_update
 
     def __str__(self):
         return self.client.name

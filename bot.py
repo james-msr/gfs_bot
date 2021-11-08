@@ -81,6 +81,10 @@ async def handle_location(message: types.Message):
     order.latitude = lat
     order.longitude = lon
     await sync_to_async(order.save)()
+    client = await sync_to_async(User.objects.get)(pk=order.client_id)
+    msg = 'Местоположение обновлено \nМаршрут: {}'.format(await sync_to_async(order.get_route)())
+    await bot.send_message(client.chat_id, msg)
+    await bot.send_location(client.chat_id, lat, lon)
     await message.answer('Местополежение отправлено', reply_markup=types.ReplyKeyboardRemove())
 
 
@@ -89,7 +93,10 @@ async def order_handler(query: CallbackQuery, callback_data: dict):
     logging.info(callback_data)
     id = callback_data['id']
     order = await sync_to_async(Order.objects.get)(pk=id)
+    time = await sync_to_async(order.update_time)()
+    msg = 'Последнее обновление: {}'.format(time.strftime("%d/%m/%Y %H:%M:%S"))
     await bot.send_location(query.from_user.id, order.latitude, order.longitude)
+    await bot.send_message(query.from_user.id, msg)
 
 
 
