@@ -1,5 +1,6 @@
 from config import *
 import datetime
+from asgiref.sync import sync_to_async
 
 from bot.models import User, Order
 
@@ -24,6 +25,7 @@ async def client_commands():
         types.BotCommand(command="finished", description="Оконченные маршруты")
     ]
     await bot.set_my_commands(bot_commands)
+
 
 def date_valid(date):
     format = "%Y-%m-%d"

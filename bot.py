@@ -5,27 +5,15 @@ from aiogram.types.callback_query import CallbackQuery
 from aiogram.types.message import Message
 from asgiref.sync import sync_to_async
 from aiogram.dispatcher import FSMContext
-from aiogram.dispatcher.filters.state import State, StatesGroup
+
 
 from commands import *
 from config import *
 from keyboads import *
+from states import *
 
 from bot.models import User, Order
 
-
-class OrderStates(StatesGroup):
-    wait_for_route_from = State('route_from', 'client')
-    wait_for_route_to = State('route_to', 'client')
-    wait_for_cargo_name = State('cargo_name', 'client')
-    wait_for_cargo_weight = State('cargo_weight', 'client')
-    wait_for_date = State('date', 'client')
-
-
-class ClientStates(StatesGroup):
-    wait_for_name = State('client_name', 'client')
-    wait_for_option = State('option', 'client')
-    wait_for_route = State('route', 'client')
 
 
 @dp.message_handler(content_types=['text'], state=OrderStates.all_states)
@@ -120,32 +108,13 @@ async def contact(message: Message):
         else:
             phonenumber= str(message.contact.phone_number)
 
-        # If user exist in db
-        if await sync_to_async(user_exists)(phone=phonenumber):
-            user = await sync_to_async(User.objects.get)(phone_num=phonenumber)
-            user.chat_id = message.chat.id
-            await sync_to_async(user.save)()
-            # for clients
-            if user.user_type == 'client':
-                keyboard = routes_keyboard()
-                print(keyboard.values)
-                
-                await client_commands()
-                await ClientStates.wait_for_option.set()
-            # for drivers
-            else:
-                keyboard = location_keyboard()
-            await bot.send_message(message.chat.id, 'Выберите опцию', reply_markup=keyboard)
-        
-        # If user is not is db
-        else:
-            user = await sync_to_async(User.objects.create)()
-            user.phone_num = phonenumber
-            user.user_type = 'client'
-            user.chat_id = message.chat.id
-            await sync_to_async(user.save)()
-            await bot.send_message(message.chat.id, 'Введите свое имя')
-            await ClientStates.wait_for_name.set()
+        user = await sync_to_async(User.objects.create)()
+        user.phone_num = phonenumber
+        user.user_type = 'client'
+        user.chat_id = message.chat.id
+        await sync_to_async(user.save)()
+        await bot.send_message(message.chat.id, 'Введите свое имя')
+        await ClientStates.wait_for_name.set()
 
 
 # For clients
@@ -165,13 +134,17 @@ async def get_name(message: Message, state: FSMContext):
 
 @dp.message_handler(content_types=['text'])
 async def non_state(message: types.Message):
-    if await sync_to_async(user_exists)(id=message.chat.id):
-        keyboard = routes_keyboard()
-        await bot.send_message(message.chat.id, 'Пожалуйста, выберите одну из опций', reply_markup=keyboard)
-        await ClientStates.wait_for_option.set()
+    if is_client(message.chat.id):
+        if await sync_to_async(user_exists)(id=message.chat.id):
+            keyboard = routes_keyboard()
+            await bot.send_message(message.chat.id, 'Пожалуйста, выберите одну из опций', reply_markup=keyboard)
+            await ClientStates.wait_for_option.set()
+        else:
+            keyboard = sendnum_keyboard()
+            await bot.send_message(message.chat.id, 'Вы не зарегистрированы в нашей базе, пожалуйста, отправьте свой номер', reply_markup=keyboard)
     else:
-        keyboard = sendnum_keyboard()
-        await bot.send_message(message.chat.id, 'Вы не зарегистрированы в нашей базе, пожалуйста, отправьте свой номер', reply_markup=keyboard)
+        keyboard = location_keyboard()
+        await bot.send_message(message.chat.id, 'Вы можете только отправлять локацию', reply_markup=keyboard)
 
 
 # Send information of a route to the client
@@ -198,22 +171,50 @@ async def order_handler(query: CallbackQuery, callback_data: dict, state: FSMCon
 @dp.message_handler(content_types=['location'])
 async def handle_location(message: types.Message):
     user = await sync_to_async(User.objects.get)(chat_id=message.chat.id)
-    lat = message.location.latitude
-    lon = message.location.longitude
-    print(message.location)
-    order = await sync_to_async(Order.objects.get)(driver=user)
-    order.latitude = lat
-    order.longitude = lon
-    await sync_to_async(order.update_time)()
-    await sync_to_async(order.save)()
-    client = await sync_to_async(User.objects.get)(pk=order.client_id)
-    msg = 'Местоположение обновлено \nМаршрут: {}'.format(await sync_to_async(order.get_route)())
-    await bot.send_message(client.chat_id, msg)
-    await bot.send_location(client.chat_id, lat, lon)
-    keyboard = location_keyboard()
-    await message.answer('Местополежение отправлено', reply_markup=keyboard)
+    if user.user_type == 'client':
+        await bot.send_message(message.chat.id, 'Нам неинтересна ваша локация')
+    else:
+        keyboard = location_keyboard()
+        order = await sync_to_async(Order.objects.filter)(driver=user, finished=False)
+        if await order.exists():
+            order = await sync_to_async(Order.objects.get)(driver=user, finished=False)
+            lat = message.location.latitude
+            lon = message.location.longitude
+            print(message.location)
+            order.latitude = lat
+            order.longitude = lon
+            await sync_to_async(order.update_time)()
+            await sync_to_async(order.save)()
+            client = await sync_to_async(User.objects.get)(pk=order.client_id)
+            msg = 'Местоположение обновлено \nМаршрут: {}'.format(await sync_to_async(order.get_route)())
+            await bot.send_message(client.chat_id, msg)
+            await bot.send_location(client.chat_id, lat, lon)
+            await message.answer('Местополежение отправлено', reply_markup=keyboard)
+        else:
+            await message.answer('Вы не находитесь в перевозке', reply_markup=keyboard)
 
 
+@dp.message_handler(content_types=['text'], state=AdminStates.all_states)
+async def get_client_id(message: types.Message, state: FSMContext):
+    if await state.get_state() == AdminStates.wait_for_id.state:
+        print(message.text)
+        if await sync_to_async(user_exists)(id=int(message.text)):
+            await state.update_data(user_id=int(message.text))
+            await bot.send_message(message.chat.id, 'Отправляй жалобу')
+            await AdminStates.next()
+        else:
+            await bot.send_message(message.chat.id, 'Мансур чисуэлла айдишку правильную напиши мозги не еби')
+    else:
+        data = await state.get_data()
+        user_id = data['user_id']
+        user = await sync_to_async(User.objects.get)(chat_id=user_id)
+        try:
+            await bot.send_message(user.chat_id, message.text)
+            await bot.send_message(message.chat.id, 'Жалоба отправлена')
+        except:
+            await bot.send_message(message.chat.id, 'Этот пидр отключил бота')
+        finally:
+            await state.finish()
 
 if __name__ == '__main__':
     executor.start_polling(dp, skip_updates=True)

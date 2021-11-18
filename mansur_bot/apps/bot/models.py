@@ -6,7 +6,8 @@ from datetime import datetime
 class User(models.Model):
     TYPES = [
         ('client', 'Клиент'),
-        ('driver', 'Водитель')
+        ('driver', 'Водитель'),
+        ('admin', 'Админ')
     ]
     user_type = models.CharField('Тип пользователя', max_length=100, choices=TYPES)
     name = models.CharField('Имя клиента', max_length=100)
@@ -33,7 +34,7 @@ class Order(models.Model):
     latitude = models.FloatField('Долгота', max_length=100, null=True, blank=True)
     longitude = models.FloatField('Широта', max_length=100, null=True, blank=True)
     last_update = models.DateTimeField('Последнее обновление', null=True, blank=True)
-    finished = models.BooleanField('Окончен', null=True, blank=True)
+    finished = models.BooleanField('Окончен', default=False)
     finish_time = models.DateTimeField('Время окончания', null=True, blank=True)
 
     def get_route(self):

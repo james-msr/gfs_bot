@@ -1,6 +1,7 @@
 from config import *
 from utils import *
 from keyboads import *
+from states import *
 
 from aiogram.types.message import Message
 from asgiref.sync import sync_to_async
@@ -12,8 +13,29 @@ from bot.models import User, Order
 # Ask phone number after command start
 @dp.message_handler(commands=['start'])
 async def phone(message: Message):
-    keyboard = start_keyboard()
-    await bot.send_message(message.chat.id, 'Отправьте номер телефона', reply_markup=keyboard)
+    print(message.chat.id)
+    if await sync_to_async(user_exists)(id=message.chat.id):
+        user = await sync_to_async(User.objects.get)(chat_id=message.chat.id)
+
+        #for admins
+        if user.user_type == 'admin':
+            await bot.send_message(message.chat.id, 'Отправляй chat_id уебка на которого хочешь жаловаться')
+            await AdminStates.wait_for_id.set()
+
+        #for clients
+        elif user.user_type == 'client':
+                keyboard = routes_keyboard()
+                await client_commands()
+                await bot.send_message(message.chat.id, 'Выберите опцию', reply_markup=keyboard)
+                await ClientStates.wait_for_option.set()
+
+        # for drivers
+        else:
+            keyboard = location_keyboard()
+            await bot.send_message(message.chat.id, 'Выберите опцию', reply_markup=keyboard)
+    else:
+        keyboard = start_keyboard()
+        await bot.send_message(message.chat.id, 'Отправьте номер телефона', reply_markup=keyboard)
 
 
 @dp.message_handler(commands=['register'])
